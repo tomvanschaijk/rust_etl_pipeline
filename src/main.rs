@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use csv_async::{AsyncReader, StringRecord};
 use futures::stream::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use rand::Rng;
 use sqlx::{
     Pool, Sqlite,
@@ -12,6 +13,7 @@ use tokio::{
     io::{AsyncWriteExt, BufWriter},
     sync::mpsc::channel,
 };
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use std::{io::Cursor, str::FromStr};
 
@@ -39,9 +41,8 @@ const LAST_NAMES: [&str; 10] = [
 ];
 
 async fn create_csv(number_rows: u32) -> Result<()> {
-    tracing::info!("Creating csv file");
-
-    let start = std::time::Instant::now();
+    let spinner = create_spinner();
+    spinner.set_message("Writing 0 lines to csv file");
 
     let file = File::create(FILE_NAME).await?;
     let mut writer = BufWriter::new(file);
@@ -55,6 +56,8 @@ async fn create_csv(number_rows: u32) -> Result<()> {
 
     let mut rng = rand::rng();
     for i in 0..number_rows {
+        spinner.set_message(format!("Writing {} lines to csv file", i + 1));
+
         let first_name = FIRST_NAMES[rng.random_range(0..FIRST_NAMES.len())];
         let last_name = LAST_NAMES[rng.random_range(0..LAST_NAMES.len())];
         let age = rng.random_range(18..=65);
@@ -75,13 +78,14 @@ async fn create_csv(number_rows: u32) -> Result<()> {
 
     writer.flush().await?;
 
-    tracing::info!("CSV file created in {:?}", start.elapsed());
+    spinner.finish();
 
     Ok(())
 }
 
 async fn create_empty_table(pool: &Pool<Sqlite>) -> Result<()> {
-    tracing::info!("Creating empty people table");
+    let spinner = create_spinner();
+    spinner.set_message("Creating empty people table");
 
     sqlx::query("DROP TABLE IF EXISTS people")
         .execute(pool)
@@ -112,23 +116,24 @@ async fn create_empty_table(pool: &Pool<Sqlite>) -> Result<()> {
         .execute(pool)
         .await
         .context("Database error while setting cache size")?;
+
+    spinner.finish();
+
     Ok(())
 }
 
 async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
-    tracing::info!("Running ETL pipeline");
-
     // Create channels
     let (to_workers, mut from_reader) = channel::<StringRecord>(100);
     let (to_db, mut from_worker) = channel(100);
 
-    let pool = pool.clone();
     let reader_handle = tokio::spawn(async move {
         // Open the CSV file and concurrently process all records
         let file = File::open(FILE_NAME)
             .await
             .context("Couldn't open CSV file!")?;
         let mut reader = AsyncReader::from_reader(file);
+
         let num_workers = num_cpus::get();
         reader
             .records()
@@ -147,8 +152,6 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
             })
             .await;
 
-        tracing::info!("CSV file reading completed, all lines pushed to processing worker");
-
         Ok::<(), anyhow::Error>(())
     });
 
@@ -157,7 +160,6 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
         const BATCH_SIZE: usize = 5_000;
         let mut batch = Vec::with_capacity(BATCH_SIZE);
 
-        // Process and send records in batch
         while let Some(record) = from_reader.recv().await {
             let first_name = &record[0];
             let last_name = &record[1];
@@ -177,11 +179,12 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
         if !batch.is_empty() {
             to_db.send(batch).await.unwrap();
         }
-
-        tracing::info!("Processing completed, all records pushed to database writer");
     });
 
+    let pool = pool.clone();
     let writer_handle = tokio::spawn(async move {
+        let spinner = create_spinner();
+        spinner.set_message("0 records stored in database");
         let start = std::time::Instant::now();
 
         // Dedicated connection for all writes
@@ -190,6 +193,8 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
             .await
             .context("Could not acquire database connection")?;
 
+        let mut processed_records = 0;
+        spinner.set_message(format!("{} records stored in database", processed_records));
         while let Some(people) = from_worker.recv().await {
             let batch_length = people.len();
 
@@ -224,18 +229,23 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
                 continue;
             }
 
-            tracing::info!("Batch of {} records stored in database", batch_length);
+            processed_records += batch_length;
+            spinner.set_message(format!("{} records stored in database", processed_records));
         }
 
-        tracing::info!(
-            "All person records stored in {:?}, cleaning up database",
+        spinner.set_message(format!(
+            "{} records stored in database in {:?}",
+            processed_records,
             start.elapsed()
-        );
+        ));
+        spinner.finish();
+
+        let spinner = create_spinner();
+        spinner.set_message("Cleaning up database");
         if let Err(e) = sqlx::query("VACUUM").execute(&pool).await {
             tracing::warn!("VACUUM failed: {:?}", e);
         }
-
-        tracing::info!("Completed database clean up");
+        spinner.finish();
 
         Ok::<(), anyhow::Error>(())
     });
@@ -246,15 +256,18 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
 }
 
 async fn run_pipeline() -> Result<()> {
-    tracing::info!("Setting up environment");
-
-    let start = std::time::Instant::now();
+    let spinner = create_spinner();
+    spinner.set_message("Setting up environment");
 
     const ENV_FILE: &str = include_str!("../.env");
     let mut env_reader = Cursor::new(ENV_FILE);
     dotenvy::from_read(&mut env_reader).expect("Failed to load embedded .env");
 
-    tracing::info!("Connecting to database");
+    spinner.finish();
+
+    let spinner = create_spinner();
+    spinner.set_message("Connecting to database");
+
     let database_url = std::env::var("DATABASE_URL")?;
     let connect_options =
         SqliteConnectOptions::from_str(&database_url)?.journal_mode(SqliteJournalMode::Memory);
@@ -262,18 +275,34 @@ async fn run_pipeline() -> Result<()> {
         .await
         .context("Could not connect to database")?;
 
+    spinner.finish();
+
     create_empty_table(&pool).await?;
 
     process_csv(&pool).await?;
 
-    tracing::info!("Pipeline completed in {:?}", start.elapsed());
-
     Ok(())
+}
+
+fn create_spinner() -> ProgressBar {
+    let spinner = ProgressBar::new_spinner();
+    let style = ProgressStyle::default_spinner()
+        .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+        .template("{spinner:.green} [{elapsed_precise}] {msg}")
+        .unwrap();
+    spinner.set_style(style);
+    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+
+    spinner
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    let filter = EnvFilter::new("rust_etl_pipeline=info,sqlx=error");
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(filter)
+        .init();
 
     let cli = Args::parse();
     match cli.command {

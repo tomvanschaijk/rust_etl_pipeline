@@ -9,6 +9,7 @@ clap = { version = "4.5.31", features = ["derive"] }
 csv-async = { version = "1.3.0", features = ["tokio"] }
 dotenvy = { version = "0.15.7" }
 futures = { version = "0.3.31" }
+indicatif = { version = "0.17.11" }
 num_cpus = { version = "1.16.0" }
 rand = { version = "0.9.0" }
 sqlx = { version = "0.8.3", features = [
@@ -18,7 +19,7 @@ sqlx = { version = "0.8.3", features = [
 ] }
 tokio = { version = "1.43.0", features = ["full"] }
 tracing = { version = "0.1.41" }
-tracing-subscriber = { version = "0.3.19" }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 uuid = { version = "1.15.1", features = ["v7", "serde"] }
 
 [profile.release]
