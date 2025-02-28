@@ -200,24 +200,27 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
                 query = query.bind(value);
             }
 
-            query
-                .execute(&mut *connection)
-                .await
-                .map_err(|e| eprintln!("Database error: {:?}", e))
-                .unwrap();
+            if let Err(e) = query.execute(&mut *connection).await {
+                tracing::error!(
+                    "Failed to insert batch of {} records: {:?}",
+                    batch_length,
+                    e
+                );
 
-            // tracing::info!("Batch of {} records stored in database", batch_length);
+                // Skip to next batch
+                continue;
+            }
+
+            tracing::info!("Batch of {} records stored in database", batch_length);
         }
 
         tracing::info!(
             "All person records stored in {:?}, cleaning up database",
             start.elapsed()
         );
-        sqlx::query("VACUUM")
-            .execute(&pool)
-            .await
-            .map_err(|e| eprintln!("Database error: {:?}", e))
-            .unwrap();
+        if let Err(e) = sqlx::query("VACUUM").execute(&pool).await {
+            tracing::warn!("VACUUM failed: {:?}", e);
+        }
 
         tracing::info!("Completed database clean up");
     });
@@ -240,7 +243,9 @@ async fn run_pipeline() -> Result<()> {
     let database_url = std::env::var("DATABASE_URL")?;
     let connect_options =
         SqliteConnectOptions::from_str(&database_url)?.journal_mode(SqliteJournalMode::Memory);
-    let pool = sqlx::SqlitePool::connect_with(connect_options).await?;
+    let pool = sqlx::SqlitePool::connect_with(connect_options)
+        .await
+        .context("Could not connect to database")?;
 
     create_empty_table(&pool).await?;
 
