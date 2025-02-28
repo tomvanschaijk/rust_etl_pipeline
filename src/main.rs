@@ -125,7 +125,9 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
     let pool = pool.clone();
     let reader_handle = tokio::spawn(async move {
         // Open the CSV file and concurrently process all records
-        let file = File::open(FILE_NAME).await.unwrap();
+        let file = File::open(FILE_NAME)
+            .await
+            .context("Couldn't open CSV file!")?;
         let mut reader = AsyncReader::from_reader(file);
         let num_workers = num_cpus::get();
         reader
@@ -133,13 +135,21 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
             .for_each_concurrent(num_workers, |record| {
                 let to_workers = to_workers.clone();
                 async move {
-                    let record = record.unwrap();
+                    let record = match record {
+                        Ok(record) => record,
+                        Err(e) => {
+                            tracing::error!("Failed to parse CSV record: {:?}", e);
+                            return;
+                        }
+                    };
                     to_workers.send(record).await.unwrap();
                 }
             })
             .await;
 
         tracing::info!("CSV file reading completed, all lines pushed to processing worker");
+
+        Ok::<(), anyhow::Error>(())
     });
 
     let processor_handle = tokio::spawn(async move {
@@ -175,7 +185,10 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
         let start = std::time::Instant::now();
 
         // Dedicated connection for all writes
-        let mut connection = pool.acquire().await.unwrap();
+        let mut connection = pool
+            .acquire()
+            .await
+            .context("Could not acquire database connection")?;
 
         while let Some(people) = from_worker.recv().await {
             let batch_length = people.len();
@@ -223,6 +236,8 @@ async fn process_csv(pool: &sqlx::Pool<Sqlite>) -> Result<()> {
         }
 
         tracing::info!("Completed database clean up");
+
+        Ok::<(), anyhow::Error>(())
     });
 
     let _ = tokio::join!(reader_handle, processor_handle, writer_handle);
