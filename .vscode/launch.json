@@ -1,0 +1,49 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Create csv file",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=rust_etl_pipeline",
+                    "--package=rust_etl_pipeline"
+                ],
+                "filter": {
+                    "name": "rust_etl_pipeline",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "create-file",
+                "100000"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Run pipeline",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=rust_etl_pipeline",
+                    "--package=rust_etl_pipeline"
+                ],
+                "filter": {
+                    "name": "rust_etl_pipeline",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "run-pipeline"
+            ],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

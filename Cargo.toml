@@ -1,0 +1,29 @@
+[package]
+name = "rust_etl_pipeline"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = { version = "1.0.96" }
+clap = { version = "4.5.31", features = ["derive"] }
+csv-async = { version = "1.3.0", features = ["tokio"] }
+dotenvy = { version = "0.15.7" }
+futures = { version = "0.3.31" }
+num_cpus = { version = "1.16.0" }
+rand = { version = "0.9.0" }
+sqlx = { version = "0.8.3", features = [
+    "runtime-tokio-rustls",
+    "sqlite",
+    "uuid",
+] }
+tokio = { version = "1.43.0", features = ["full"] }
+tracing = { version = "0.1.41" }
+tracing-subscriber = { version = "0.3.19" }
+uuid = { version = "1.15.1", features = ["v7", "serde"] }
+
+[profile.release]
+opt-level = 2
+strip = true
+lto = "fat"
+codegen-units = 1
+panic = "abort"
