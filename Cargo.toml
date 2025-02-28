@@ -3,6 +3,10 @@ name = "rust_etl_pipeline"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name="etl_rust"
+path="./src/main.rs"
+
 [dependencies]
 anyhow = { version = "1.0.96" }
 clap = { version = "4.5.31", features = ["derive"] }

@@ -85,7 +85,7 @@ async fn create_csv(number_rows: u32) -> Result<()> {
 
 async fn create_empty_table(pool: &Pool<Sqlite>) -> Result<()> {
     let spinner = create_spinner();
-    spinner.set_message("Creating empty people table");
+    spinner.set_message("Creating empty table");
 
     sqlx::query("DROP TABLE IF EXISTS people")
         .execute(pool)

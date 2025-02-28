@@ -11,11 +11,11 @@
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=rust_etl_pipeline",
+                    "--bin=etl_rust",
                     "--package=rust_etl_pipeline"
                 ],
                 "filter": {
-                    "name": "rust_etl_pipeline",
+                    "name": "etl_rust",
                     "kind": "bin"
                 }
             },
@@ -32,11 +32,11 @@
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=rust_etl_pipeline",
+                    "--bin=etl_rust",
                     "--package=rust_etl_pipeline"
                 ],
                 "filter": {
-                    "name": "rust_etl_pipeline",
+                    "name": "etl_rust",
                     "kind": "bin"
                 }
             },
