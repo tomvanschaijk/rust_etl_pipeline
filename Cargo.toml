@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name="etl_rust"
+name="etl_rs"
 path="./src/main.rs"
 
 [dependencies]
